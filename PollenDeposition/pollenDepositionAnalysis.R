@@ -6,6 +6,7 @@ library(tidyverse)  # Import tidyverse functions
 library(brms)       # Import the brms library for diverse model specification
 library(DHARMa)     # Import the model checking library
 library(ggplot2)    # Import plotting functions
+library(parallel)   # Import the parallel libraries
 # Import the pollen deposition data from the file
 pollenDepData <- read_excel("PollenDeposition/data_deposition.xlsx", "Ark1", na = c("", "NA", "missing"))
 # Create a Genus column so that Genus can be analysed
@@ -105,6 +106,7 @@ numChains <- 4
 numIterations <- 100000
 numBurnIn <- 20000
 numThin <- 1
+numCores <- min(detectCores(), numChains)
 # options(cmdstanr_write_stan_file_dir = tempdir())
 # Full model for pollen grain deposition
 grainDep_pollinator <- brm(grains ~ visitLength + pollinator + (1 | date:orchard),
@@ -113,4 +115,20 @@ grainDep_pollinator <- brm(grains ~ visitLength + pollinator + (1 | date:orchard
   iter = numBurnIn + numIterations,
   warmup = numBurnIn,
   thin = numThin,
-  backend = "cmdstanr")
+  backend = "cmdstanr",
+  cores = numCores)
+# Produce a summary of the grain deposition parameter
+summary(grainDep_pollinator)
+coeffsToPlot <- c("visitLength", "pollinatorHoneybee", "pollinatorSolitaryBee")
+labelsToPlot <- c("Visit Length", "Honeybee", "Solitary Bee")
+# Plot to assess convergence of the parameters
+# >1.1 too high - no convergence
+# 1.05-1.1 OK
+# <1.05 good
+mcmc_plot(grainDep_pollinator, type = "rhat", variable = "^b_", regex = TRUE)
+# Plot to look at model effects
+mcmc_plot(grainDep_pollinator, type = "areas", variable = paste("b", coeffsToPlot, sep = "_"), prob = 0.50, prob_outer = 0.95, point_est = "mean", area_method = "scaled height") + scale_y_discrete(labels = labelsToPlot)
+
+# Model for the tube formation
+tubeForm_pollinator <- glm(cbind(grains, tubes + grains) ~ pollinator, data = longDepData, family = binomial)
+summary(tubeForm_pollinator)
