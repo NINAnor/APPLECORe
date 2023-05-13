@@ -189,7 +189,7 @@ grainDep_pollinator <- brm(grains ~ visitLength + pollinator + (1 | date:orchard
   iter = numBurnIn + numIterations,
   warmup = numBurnIn,
   thin = numThin,
-  backend = "cmdstanr",
+#  backend = "cmdstanr",
   cores = numCores)
 # Produce a summary of the grain deposition model
 summary(grainDep_pollinator)
@@ -271,13 +271,14 @@ ggplot(grainDep_pollinator_randEffFrame, aes(x = date, y = Estimate)) +
 
 # 2. Version of the model using genus
 # Full model for pollen grain deposition
+longDepData$genus <- factor(as.character(longDepData$genus),levels = c("Apis", "Andrena", "Bombus", "Lasioglossum"))
 grainDep_genus <- brm(grains ~ visitLength + genus + (1 | date:orchard),
   data = longDepData, family = zero_inflated_negbinomial(),
   chains = numChains,
   iter = numBurnIn + numIterations,
   warmup = numBurnIn,
   thin = numThin,
-  backend = "cmdstanr",
+  #backend = "cmdstanr",
   cores = numCores)
 # Produce a summary of the grain deposition parameter
 summary(grainDep_genus)
@@ -306,6 +307,22 @@ grainDep_genus_beeTypeFrame <- data.frame(
     rep("Bombus", nrow(grainDep_genus_postSamples)),
     rep("Lasioglossum", nrow(grainDep_genus_postSamples)))
 )
+# Make a data frame of difference summaries
+diffSummary <- do.call(rbind, lapply(X = 2:length(levels(longDepData$genus)), FUN = function(fromIndex, outSamples) {
+  # Calculate the base deposition
+  baseDep <- exp(outSamples[outSamples$beeType == unique(outSamples$beeType)[fromIndex], "grainDep"])
+  do.call(rbind, lapply(X = 1:(fromIndex - 1), FUN = function(toIndex, fromIndex, baseDep, outSamples) {
+    toDep <- exp(outSamples[outSamples$beeType == unique(outSamples$beeType)[toIndex], "grainDep"])
+    diffSamples <- toDep - baseDep
+    probCalc <- sum(diffSamples > 0) / length(diffSamples)
+    data.frame(
+      genusOne = unique(outSamples$beeType)[fromIndex],
+      genusTwo = unique(outSamples$beeType)[toIndex],
+      probTwoGreaterThanOne = probCalc,
+      probOneGreaterThanTwo = 1.0 - probCalc
+    )
+  }, fromIndex = fromIndex, baseDep = baseDep, outSamples = outSamples))
+}, outSamples = grainDep_genus_beeTypeFrame))
 # Plot of grain deposition per bee type
 ggplot(grainDep_genus_beeTypeFrame, aes(y = grainDep, x = beeType)) + geom_violin(aes(fill = beeType), alpha = 0.6, col = NA) +
   stat_summary(geom = "boxplot", fun.data = credIntFunc, fun.args = list(probs = c(0.025, 0.25, 0.75, 0.975)), width = 0.2) +
